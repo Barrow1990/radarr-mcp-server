@@ -98,7 +98,7 @@ failure instead.
 
 Built and pushed to `ghcr.io/barrow1990/radarr-mcp-server` by
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) on every push to
-`master` that passes tests, tagged `:latest`, `:<commit-sha>`, and
+`main` that passes tests, tagged `:latest`, `:<commit-sha>`, and
 `:radarr-<api-version>` (e.g. `:radarr-v3` — the Radarr API version this
 build targets, read out of `server.py`'s `RADARR_API_VERSION` default so it
 can't drift from what the code actually calls). `docker-compose.yml` pulls
