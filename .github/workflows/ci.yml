@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      # Live Radarr contract tests are opt-in (see tests/test_live_radarr.py)
+      # and there's no Radarr instance reachable from CI, so they're skipped
+      # here automatically — only the mocked unit/http tests run.
+      - name: Run tests
+        run: python -m pytest tests/ -v
+
+  docker:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # GHCR requires a lowercase image path; github.repository preserves
+      # the repo's actual case (Barrow1990/...), so lowercase it explicitly
+      # rather than assuming the owner name happens to already be lowercase.
+      - name: Compute lowercase image name
+        run: echo "IMAGE=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      # Read from server.py rather than duplicating it in workflow config, so
+      # the two can't drift out of sync.
+      - name: Read Radarr API version this build targets
+        run: |
+          API_VERSION=$(python3 -c "import re; print(re.search(r'os\.environ\.get\\(\"RADARR_API_VERSION\", \"([^\"]+)\"\\)', open('server.py').read()).group(1))")
+          echo "RADARR_API_VERSION=$API_VERSION" >> "$GITHUB_ENV"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            RADARR_API_VERSION=${{ env.RADARR_API_VERSION }}
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:radarr-${{ env.RADARR_API_VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
